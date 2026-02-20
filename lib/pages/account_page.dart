@@ -378,14 +378,14 @@ class _AccountPageState extends State<AccountPage> {
                       const SizedBox(height: 24),
 
                       // Logout Button
-                      OutlinedButton.icon(
+                      ElevatedButton.icon(
                         onPressed: _logout,
                         icon: const Icon(Icons.logout),
                         label: const Text('Keluar dari Akun'),
-                        style: OutlinedButton.styleFrom(
+                        style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          foregroundColor: Colors.red,
-                          side: const BorderSide(color: Colors.red),
+                          backgroundColor: Colors.red,
+                          foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
