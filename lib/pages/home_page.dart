@@ -1,7 +1,10 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:synergy/models/user_profile.dart';
+import 'package:synergy/models/calendar_event.dart';
 import 'package:synergy/services/auth_service.dart';
+import 'package:synergy/services/calendar_service.dart';
 import 'package:synergy/constants/app_colors.dart';
 import 'account_page.dart';
 import 'personal_notes_page.dart';
@@ -22,9 +25,13 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final _authService = AuthService();
+  final _calendarService = CalendarService();
   UserProfile? _userProfile;
   bool _isLoading = true;
   String _motivationalQuote = '';
+  Map<DateTime, List<CalendarEvent>> _weekEvents = {};
+  DateTime _focusedWeekStart = DateTime.now();
+  DateTime? _selectedDay;
 
   // Daftar kata-kata motivasi untuk mahasiswa
   final List<String> _motivationalQuotes = [
@@ -65,6 +72,53 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadUserProfile();
     _generateRandomQuote();
+    _selectedDay = DateTime.now();
+    _focusedWeekStart = _getWeekStart(DateTime.now());
+    _loadWeekEvents();
+  }
+
+  DateTime _getWeekStart(DateTime date) {
+    // Get Monday of the week
+    return date.subtract(Duration(days: date.weekday - 1));
+  }
+
+  Future<void> _loadWeekEvents() async {
+    try {
+      final weekStart = _focusedWeekStart;
+      final weekEnd = weekStart.add(const Duration(days: 6));
+      
+      final events = await _calendarService.getAllEvents(
+        startDate: weekStart,
+        endDate: weekEnd,
+      );
+
+      final Map<DateTime, List<CalendarEvent>> eventMap = {};
+      
+      for (final event in events) {
+        final date = DateTime(
+          event.startTime.year,
+          event.startTime.month,
+          event.startTime.day,
+        );
+        if (eventMap[date] == null) {
+          eventMap[date] = [];
+        }
+        eventMap[date]!.add(event);
+      }
+
+      if (mounted) {
+        setState(() {
+          _weekEvents = eventMap;
+        });
+      }
+    } catch (e) {
+      // Silently fail, events just won't show
+      if (mounted) {
+        setState(() {
+          _weekEvents = {};
+        });
+      }
+    }
   }
 
   void _generateRandomQuote() {
@@ -219,6 +273,17 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 32),
 
+                      // Week Calendar
+                      Text(
+                        'Minggu Ini',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildWeekCalendar(),
+                      const SizedBox(height: 32),
+
                       // Menu
                       Text(
                         'Menu',
@@ -336,6 +401,316 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
     );
+  }
+
+  Widget _buildWeekCalendar() {
+    final today = DateTime.now();
+    final todayNormalized = DateTime(today.year, today.month, today.day);
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            // Week navigation
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () {
+                    setState(() {
+                      _focusedWeekStart = _focusedWeekStart.subtract(const Duration(days: 7));
+                    });
+                    _loadWeekEvents();
+                  },
+                ),
+                Text(
+                  _getWeekRangeText(),
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () {
+                    setState(() {
+                      _focusedWeekStart = _focusedWeekStart.add(const Duration(days: 7));
+                    });
+                    _loadWeekEvents();
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Days of the week
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(7, (index) {
+                final date = _focusedWeekStart.add(Duration(days: index));
+                final normalizedDate = DateTime(date.year, date.month, date.day);
+                final isToday = normalizedDate == todayNormalized;
+                final isSelected = _selectedDay != null && 
+                    DateTime(_selectedDay!.year, _selectedDay!.month, _selectedDay!.day) == normalizedDate;
+                final events = _weekEvents[normalizedDate] ?? [];
+                final hasEvents = events.isNotEmpty;
+
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedDay = date;
+                      });
+                    },
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isSelected 
+                            ? AppColors.primary
+                            : isToday 
+                                ? AppColors.primary.withOpacity(0.1)
+                                : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        border: isToday && !isSelected
+                            ? Border.all(color: AppColors.primary, width: 1)
+                            : null,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _getDayName(date.weekday),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: isSelected ? Colors.white : Colors.grey[600],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${date.day}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          // Event indicator dots
+                          if (hasEvents)
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                if (events.length <= 3)
+                                  ...List.generate(
+                                    events.length,
+                                    (i) => Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 1),
+                                      width: 4,
+                                      height: 4,
+                                      decoration: BoxDecoration(
+                                        color: isSelected ? Colors.white : AppColors.secondary,
+                                        shape: BoxShape.circle,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? Colors.white : AppColors.secondary,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      '${events.length}',
+                                      style: TextStyle(
+                                        fontSize: 8,
+                                        color: isSelected ? AppColors.primary : Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+            // Selected day events
+            if (_selectedDay != null) ...[
+              const SizedBox(height: 16),
+              const Divider(),
+              const SizedBox(height: 8),
+              _buildSelectedDayEvents(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getWeekRangeText() {
+    final weekEnd = _focusedWeekStart.add(const Duration(days: 6));
+    final monthStart = _getMonthName(_focusedWeekStart.month);
+    final monthEnd = _getMonthName(weekEnd.month);
+    
+    if (_focusedWeekStart.month == weekEnd.month) {
+      return '${_focusedWeekStart.day}-${weekEnd.day} $monthStart ${_focusedWeekStart.year}';
+    } else {
+      return '${_focusedWeekStart.day} $monthStart - ${weekEnd.day} $monthEnd ${_focusedWeekStart.year}';
+    }
+  }
+
+  String _getDayName(int weekday) {
+    const days = ['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'];
+    return days[weekday - 1];
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun',
+      'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'
+    ];
+    return months[month - 1];
+  }
+
+  Widget _buildSelectedDayEvents() {
+    final selectedDate = DateTime(
+      _selectedDay!.year,
+      _selectedDay!.month,
+      _selectedDay!.day,
+    );
+    final events = _weekEvents[selectedDate] ?? [];
+
+    if (events.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Text(
+          'Tidak ada kegiatan',
+          style: TextStyle(
+            color: Colors.grey[600],
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${events.length} kegiatan',
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...events.take(3).map((event) {
+          final timeStr = DateFormat('HH:mm').format(event.startTime);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: _getEventColor(event.source),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        event.title,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '$timeStr • ${_getSourceName(event.source)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        if (events.length > 3)
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (context) => const CalendarPage(),
+                ),
+              );
+            },
+            child: Text('Lihat semua ${events.length} kegiatan'),
+          ),
+      ],
+    );
+  }
+
+  Color _getEventColor(EventSource source) {
+    switch (source) {
+      case EventSource.courseSchedule:
+        return const Color(0xFF00897B);
+      case EventSource.competition:
+        return const Color(0xFFFFB300);
+      case EventSource.volunteer:
+        return const Color(0xFF4CAF50);
+      case EventSource.organization:
+        return const Color(0xFF013880);
+      case EventSource.project:
+        return const Color(0xFFFF6F00);
+      case EventSource.manual:
+        return const Color(0xFFE91E63);
+      case EventSource.document:
+        return const Color(0xFF9C27B0);
+      case EventSource.note:
+        return const Color(0xFF0078C1);
+    }
+  }
+
+  String _getSourceName(EventSource source) {
+    switch (source) {
+      case EventSource.courseSchedule:
+        return 'Jadwal Kuliah';
+      case EventSource.competition:
+        return 'Perlombaan';
+      case EventSource.volunteer:
+        return 'Volunteer';
+      case EventSource.organization:
+        return 'Organisasi';
+      case EventSource.project:
+        return 'Project';
+      case EventSource.manual:
+        return 'Google Calendar';
+      case EventSource.document:
+        return 'Dokumen';
+      case EventSource.note:
+        return 'Catatan';
+    }
   }
 
   Widget _buildMenuCard({
