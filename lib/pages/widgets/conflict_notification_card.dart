@@ -185,7 +185,7 @@ class ConflictNotificationCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: conflict.conflictingEvent.color,
+                          color: AppColors.primary,
                         ),
                         overflow: TextOverflow.ellipsis,
                       ),

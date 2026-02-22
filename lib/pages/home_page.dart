@@ -43,6 +43,7 @@ class _HomePageState extends State<HomePage> {
   List<EventConflict> _todayConflicts = [];
   DateTime _focusedWeekStart = DateTime.now();
   DateTime? _selectedDay;
+  int _selectedBottomNavIndex = 0;
 
   @override
   void initState() {
@@ -300,7 +301,12 @@ class _HomePageState extends State<HomePage> {
   void _navigateToAccount() {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => const AccountPage()),
-    );
+    ).then((_) {
+      // Reset ke Home ketika kembali dari Account page
+      setState(() {
+        _selectedBottomNavIndex = 0;
+      });
+    });
   }
 
   @override
@@ -504,7 +510,7 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 5),
+                            const SizedBox(height: 10),
 
                             // Menu Section dengan scroll indicator
                             Row(
@@ -757,6 +763,113 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Tombol Plus ditekan')),
+          );
+        },
+        backgroundColor: AppColors.primary,
+        elevation: 4,
+        child: const Icon(
+          Icons.add,
+          size: 32,
+          color: Colors.white,
+        ),
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+      bottomNavigationBar: BottomAppBar(
+        color: AppColors.primary,
+        elevation: 8,
+        notchMargin: 8,
+        shape: const CircularNotchedRectangle(),
+        child: Container(
+          height: 60,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Home Button
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedBottomNavIndex = 0;
+                    });
+                    // Sudah di home page, tidak perlu navigasi
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.home,
+                        size: 28,
+                        color: _selectedBottomNavIndex == 0
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Home',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: _selectedBottomNavIndex == 0
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: _selectedBottomNavIndex == 0
+                              ? Colors.white
+                              : Colors.white.withOpacity(0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Spacer untuk FAB
+              const SizedBox(width: 80),
+              // Account Button
+              Expanded(
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedBottomNavIndex = 1;
+                    });
+                    _navigateToAccount();
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.account_circle,
+                        size: 28,
+                        color: _selectedBottomNavIndex == 1
+                            ? Colors.white
+                            : Colors.white.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Account',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: _selectedBottomNavIndex == 1
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: _selectedBottomNavIndex == 1
+                              ? Colors.white
+                              : Colors.white.withOpacity(0.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
