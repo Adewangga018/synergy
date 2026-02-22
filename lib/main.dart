@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:synergy/services/notification_service.dart';
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 
@@ -10,10 +11,14 @@ void main() async {
   // Initialize locale untuk DateFormat Indonesia
   await initializeDateFormatting('id_ID', null);
 
+  // Initialize Supabase
   await Supabase.initialize(
     url: 'https://dswirqyxefvscpdobknb.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzd2lycXl4ZWZ2c2NwZG9ia25iIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwNTM1NjIsImV4cCI6MjA4NjYyOTU2Mn0.s3Fl9aAYXds0tKTwiSGo0mgBu4cdx8V-iwPX8gdk7PA',
   );
+
+  // Initialize Notification Service
+  await NotificationService().initialize();
 
   runApp(const MyApp());
 }

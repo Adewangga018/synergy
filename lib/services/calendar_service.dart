@@ -1,11 +1,14 @@
 import 'package:synergy/models/calendar_event.dart';
+import 'package:synergy/models/event_conflict.dart';
 import 'package:synergy/models/course_schedule.dart';
 import 'package:synergy/models/competition.dart';
 import 'package:synergy/models/volunteer_activity.dart';
 import 'package:synergy/models/organization.dart';
 import 'package:synergy/models/project.dart';
+import 'package:synergy/models/user_task.dart';
 import 'package:synergy/services/course_schedule_service.dart';
 import 'package:synergy/services/auth_service.dart';
+import 'package:synergy/services/user_task_service.dart';
 import 'package:synergy/utils/semester_calculator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -13,6 +16,7 @@ class CalendarService {
   final _supabase = Supabase.instance.client;
   final _courseScheduleService = CourseScheduleService();
   final _authService = AuthService();
+  final _taskService = UserTaskService();
 
   /// Get all events from all sources
   Future<List<CalendarEvent>> getAllEvents({
@@ -28,6 +32,7 @@ class CalendarService {
       _getVolunteerEvents(),
       _getOrganizationEvents(),
       _getProjectEvents(),
+      _getTaskEvents(startDate: startDate, endDate: endDate),
     ]);
 
     for (final events in results) {
@@ -377,6 +382,73 @@ class CalendarService {
     return events;
   }
 
+  /// Convert User Tasks dengan due time ke CalendarEvent
+  /// 
+  /// Hanya task yang punya waktu spesifik (dueTime) yang dimasukkan,
+  /// karena task tanpa waktu bisa dikerjakan kapan saja (tidak blocking)
+  Future<List<CalendarEvent>> _getTaskEvents({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    try {
+      final events = <CalendarEvent>[];
+      
+      // Default to current month if no range specified
+      final now = DateTime.now();
+      final filterStart = startDate ?? DateTime(now.year, now.month, 1);
+      final filterEnd = endDate ?? DateTime(now.year, now.month + 1, 0);
+
+      // Ambil tasks untuk range tanggal tersebut
+      final taskMap = await _taskService.getTasksForMonth(
+        filterStart.year,
+        filterStart.month,
+      );
+
+      // Convert tasks dengan dueTime ke CalendarEvent
+      for (final entry in taskMap.entries) {
+        final date = entry.key;
+        // Skip jika di luar range
+        if (date.isBefore(filterStart) || date.isAfter(filterEnd)) continue;
+
+        for (final task in entry.value) {
+          // HANYA task dengan dueTime yang dimasukkan ke calendar
+          if (task.dueTime == null) continue;
+
+          final eventStart = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            task.dueTime!.hour,
+            task.dueTime!.minute,
+          );
+
+          // Assume task duration 1 jam (bisa disesuaikan)
+          final eventEnd = eventStart.add(const Duration(hours: 1));
+
+          events.add(CalendarEvent(
+            id: 'task_${task.id}',
+            source: EventSource.note, // Gunakan 'note' untuk task
+            title: task.title,
+            description: task.description,
+            startTime: eventStart,
+            endTime: eventEnd,
+            isAllDay: false,
+            metadata: {
+              'task_id': task.id,
+              'priority': task.priority.name,
+              'is_completed': task.isCompleted,
+            },
+          ));
+        }
+      }
+
+      return events;
+    } catch (e) {
+      print('Error getting task events: $e');
+      return [];
+    }
+  }
+
   /// Helper: Check if date matches day of week
   bool _matchesDayOfWeek(DateTime date, DayOfWeek dayOfWeek) {
     final weekday = date.weekday; // 1=Monday, 7=Sunday
@@ -424,5 +496,119 @@ class CalendarService {
     final events = await getAllEvents(startDate: now, endDate: endDate);
 
     return events.where((event) => !event.isPast).take(10).toList();
+  }
+
+  /// Deteksi konflik antara event akademik dengan semua kegiatan lainnya
+  /// 
+  /// Method ini akan mencari irisan waktu (overlap) antara jadwal kuliah
+  /// dengan SEMUA kegiatan non-akademik:
+  /// - Organization (Organisasi)
+  /// - Volunteer (Kegiatan Sukarela)
+  /// - Competition (Kompetisi)
+  /// - Project (Proyek)
+  /// - Document (Deadline Dokumen)
+  /// - Note (Catatan Penting)
+  /// - User Tasks (Task dengan waktu deadline spesifik)
+  /// - Manual (Event dari Google Calendar)
+  /// 
+  /// Returns: List of EventConflict yang merepresentasikan bentrok jadwal
+  Future<List<EventConflict>> detectConflicts({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    // Default: cek konflik untuk hari ini saja
+    final now = DateTime.now();
+    final checkStart = startDate ?? DateTime(now.year, now.month, now.day);
+    final checkEnd = endDate ?? DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    // Ambil semua event dalam range waktu
+    final allEvents = await getAllEvents(
+      startDate: checkStart,
+      endDate: checkEnd,
+    );
+
+    print('📅 [CONFLICT DETECTOR] Total events today: ${allEvents.length}');
+
+    // Pisahkan event akademik vs SEMUA kegiatan lainnya
+    final academicEvents = allEvents
+        .where((e) => e.source == EventSource.courseSchedule)
+        .toList();
+
+    print('   🎓 Academic events: ${academicEvents.length}');
+    for (var event in academicEvents) {
+      print('      - ${event.title} (${event.startTime.hour}:${event.startTime.minute.toString().padLeft(2, '0')} - ${event.endTime?.hour}:${event.endTime?.minute.toString().padLeft(2, '0')})');
+    }
+
+    // Non-akademik: Semua event KECUALI courseSchedule
+    final nonAcademicEvents = allEvents
+        .where((e) => e.source != EventSource.courseSchedule)
+        .toList();
+
+    print('   📌 Non-academic events: ${nonAcademicEvents.length}');
+    for (var event in nonAcademicEvents) {
+      print('      - ${event.title} [${event.source.displayName}] (${event.startTime.hour}:${event.startTime.minute.toString().padLeft(2, '0')} - ${event.endTime?.hour}:${event.endTime?.minute.toString().padLeft(2, '0')})');
+    }
+
+    // Deteksi overlap
+    final List<EventConflict> conflicts = [];
+
+    for (final academicEvent in academicEvents) {
+      for (final nonAcademicEvent in nonAcademicEvents) {
+        // Cek apakah ada irisan waktu
+        final conflict = _checkTimeOverlap(academicEvent, nonAcademicEvent);
+        if (conflict != null) {
+          conflicts.add(conflict);
+        }
+      }
+    }
+
+    return conflicts;
+  }
+
+  /// Helper method untuk mengecek overlap antara dua event
+  /// 
+  /// Returns EventConflict jika ada overlap, null jika tidak ada
+  EventConflict? _checkTimeOverlap(
+    CalendarEvent academicEvent,
+    CalendarEvent nonAcademicEvent,
+  ) {
+    // Pastikan kedua event punya waktu akhir
+    if (academicEvent.endTime == null || nonAcademicEvent.endTime == null) {
+      return null;
+    }
+
+    final academicStart = academicEvent.startTime;
+    final academicEnd = academicEvent.endTime!;
+    final nonAcademicStart = nonAcademicEvent.startTime;
+    final nonAcademicEnd = nonAcademicEvent.endTime!;
+
+    // Cek apakah ada irisan waktu
+    // Dua event overlap jika:
+    // - Start time salah satu ada di antara range satunya, ATAU
+    // - End time salah satu ada di antara range satunya, ATAU
+    // - Salah satu event sepenuhnya "membungkus" event lainnya
+    
+    final hasOverlap = 
+        (academicStart.isBefore(nonAcademicEnd) && academicEnd.isAfter(nonAcademicStart));
+
+    if (!hasOverlap) {
+      return null;
+    }
+
+    // Hitung waktu konflik yang sebenarnya (irisan)
+    final conflictStart = academicStart.isAfter(nonAcademicStart)
+        ? academicStart
+        : nonAcademicStart;
+
+    final conflictEnd = academicEnd.isBefore(nonAcademicEnd)
+        ? academicEnd
+        : nonAcademicEnd;
+
+    return EventConflict(
+      academicEvent: academicEvent,
+      conflictingEvent: nonAcademicEvent,
+      conflictStartTime: conflictStart,
+      conflictEndTime: conflictEnd,
+    );
   }
 }

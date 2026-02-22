@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:synergy/models/user_profile.dart';
 import 'package:synergy/models/calendar_event.dart';
+import 'package:synergy/models/event_conflict.dart';
 import 'package:synergy/models/user_task.dart';
 import 'package:synergy/services/auth_service.dart';
 import 'package:synergy/services/calendar_service.dart';
 import 'package:synergy/services/motivational_quote_service.dart';
 import 'package:synergy/services/user_task_service.dart';
+import 'package:synergy/services/notification_service.dart';
 import 'package:synergy/constants/app_colors.dart';
+import 'package:synergy/pages/widgets/conflict_notification_card.dart';
 import 'account_page.dart';
 import 'personal_notes_page.dart';
 import 'competitions_page.dart';
@@ -30,12 +33,14 @@ class _HomePageState extends State<HomePage> {
   final _calendarService = CalendarService();
   final _quoteService = MotivationalQuoteService();
   final _taskService = UserTaskService();
+  final _notificationService = NotificationService();
   final _menuScrollController = ScrollController();
   UserProfile? _userProfile;
   bool _isLoading = true;
   String _motivationalQuote = '';
   Map<DateTime, List<CalendarEvent>> _weekEvents = {};
   Map<DateTime, List<UserTask>> _weekTasks = {};
+  List<EventConflict> _todayConflicts = [];
   DateTime _focusedWeekStart = DateTime.now();
   DateTime? _selectedDay;
 
@@ -46,6 +51,27 @@ class _HomePageState extends State<HomePage> {
     _selectedDay = DateTime.now();
     _focusedWeekStart = _getWeekStart(DateTime.now());
     _loadWeekEvents();
+    _loadTodayConflicts();
+    _setupNotifications();
+  }
+
+  /// Setup notification permissions dan daily schedule
+  Future<void> _setupNotifications() async {
+    try {
+      // Request permission (penting untuk Android 13+)
+      final granted = await _notificationService.requestPermission();
+      
+      if (granted) {
+        print('✅ Notification permission granted');
+        
+        // Schedule daily morning check (07:00 AM)
+        await _notificationService.scheduleDailyConflictCheck();
+      } else {
+        print('❌ Notification permission denied');
+      }
+    } catch (e) {
+      print('Error setting up notifications: $e');
+    }
   }
 
   @override
@@ -127,12 +153,93 @@ class _HomePageState extends State<HomePage> {
           _weekTasks = taskMap;
         });
       }
+
+      // Schedule reminders untuk event hari ini
+      await _scheduleEventReminders(eventMap);
     } catch (e) {
       // Silently fail, events just won't show
       if (mounted) {
         setState(() {
           _weekEvents = {};
           _weekTasks = {};
+        });
+      }
+    }
+  }
+
+  /// Schedule reminder 30 menit sebelum setiap event hari ini
+  Future<void> _scheduleEventReminders(Map<DateTime, List<CalendarEvent>> eventMap) async {
+    try {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      
+      // Ambil event hari ini
+      final todayEvents = eventMap[today] ?? [];
+      
+      if (todayEvents.isEmpty) {
+        print('📅 No events today to schedule reminders');
+        return;
+      }
+
+      // Schedule reminder untuk setiap event
+      await _notificationService.scheduleAllEventReminders(todayEvents);
+    } catch (e) {
+      print('Error scheduling event reminders: $e');
+      // Silently fail
+    }
+  }
+
+  Future<void> _loadTodayConflicts() async {
+    try {
+      final now = DateTime.now();
+      print('🔍 [CONFLICT DETECTOR] Checking conflicts for: ${DateFormat('yyyy-MM-dd').format(now)}');
+      
+      final conflicts = await _calendarService.detectConflicts(
+        startDate: DateTime(now.year, now.month, now.day),
+        endDate: DateTime(now.year, now.month, now.day, 23, 59, 59),
+      );
+
+      print('🔍 [CONFLICT DETECTOR] Found ${conflicts.length} conflicts');
+      for (var conflict in conflicts) {
+        print('   ⚠️ ${conflict.academicEvent.title} vs ${conflict.conflictingEvent.title} at ${conflict.conflictTimeRange}');
+      }
+
+      if (mounted) {
+        setState(() {
+          _todayConflicts = conflicts;
+        });
+      }
+
+      // Send notification jika ada konflik
+      if (conflicts.isNotEmpty) {
+        String details;
+        if (conflicts.length == 1) {
+          final conflict = conflicts.first;
+          details = '${conflict.academicEvent.title} bentrok dengan ${conflict.conflictingEvent.title}';
+        } else {
+          details = 'Ada ${conflicts.length} bentrok jadwal. Tap untuk lihat detail.';
+        }
+
+        await _notificationService.sendConflictNotification(
+          conflictCount: conflicts.length,
+          conflictDetails: details,
+        );
+
+        // Schedule pre-conflict warnings (1 jam sebelum konflik)
+        for (var conflict in conflicts) {
+          await _notificationService.schedulePreConflictWarning(
+            academicTitle: conflict.academicEvent.title,
+            conflictTitle: conflict.conflictingEvent.title,
+            conflictTime: conflict.conflictStartTime,
+          );
+        }
+      }
+    } catch (e) {
+      print('❌ [CONFLICT DETECTOR] Error loading conflicts: $e');
+      // Silently fail, conflicts just won't show
+      if (mounted) {
+        setState(() {
+          _todayConflicts = [];
         });
       }
     }
@@ -225,94 +332,135 @@ class _HomePageState extends State<HomePage> {
           ? const Center(child: CircularProgressIndicator())
           : _userProfile == null
               ? const Center(child: Text('Gagal memuat profil'))
-              : Column(
-                  children: [
-                    // Motivational Hero Banner - Full Screen
-                    Container(
-                      width: double.infinity,
-                      decoration: const BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Color(0xFF013880), // Biru ITS Gelap
-                            Color(0xFF0078C1), // Biru ITS Terang
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.only(
-                          bottomLeft: Radius.circular(24),
-                          bottomRight: Radius.circular(24),
-                        ),
-                      ),
-                      padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.wb_sunny,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Halo ${_userProfile!.namaPanggilan}, Gimana kabarmu?',
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
+              : SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      // Motivational Hero Banner - Scrollable
+                      Container(
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0xFF013880), // Biru ITS Gelap
+                              Color(0xFF0078C1), // Biru ITS Terang
                             ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
                           ),
-                          const SizedBox(height: 16),
-                          Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.3),
-                                width: 1,
-                              ),
-                            ),
-                            child: Row(
+                          borderRadius: BorderRadius.only(
+                            bottomLeft: Radius.circular(24),
+                            bottomRight: Radius.circular(24),
+                          ),
+                        ),
+                        padding: const EdgeInsets.fromLTRB(24, 24, 24, 28),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
                               children: [
                                 const Icon(
-                                  Icons.format_quote,
-                                  color: Colors.white70,
+                                  Icons.wb_sunny,
+                                  color: Colors.white,
                                   size: 24,
                                 ),
-                                const SizedBox(width: 12),
+                                const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    _motivationalQuote,
-                                    textAlign: TextAlign.justify,
+                                    'Halo ${_userProfile!.namaPanggilan}, Gimana kabarmu?',
                                     style: const TextStyle(
                                       color: Colors.white,
-                                      fontSize: 14,
-                                      height: 1.5,
-                                      fontStyle: FontStyle.italic,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
                                     ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
+                            const SizedBox(height: 16),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.3),
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.format_quote,
+                                    color: Colors.white70,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      _motivationalQuote,
+                                      textAlign: TextAlign.justify,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        height: 1.5,
+                                        fontStyle: FontStyle.italic,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
 
-                    // Scrollable Content: Calendar + Menu
-                    Expanded(
-                      child: SingleChildScrollView(
+                      // Content: Conflict Alerts + Calendar + Menu
+                      Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Conflict Notification (jika ada)
+                            if (_todayConflicts.isNotEmpty)
+                              ConflictNotificationCard(
+                                conflicts: _todayConflicts,
+                                userNickname: _userProfile?.namaPanggilan ?? 'Cak Arjuna',
+                              ),
+
+                            // Debug Info (hanya muncul jika tidak ada konflik - untuk development)
+                            if (_todayConflicts.isEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 16),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: AppColors.info.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: AppColors.info.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.check_circle_outline,
+                                      size: 16,
+                                      color: AppColors.info,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        'Tidak ada konflik jadwal hari ini',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.info,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
                             // Week Calendar Section
                             Row(
                               children: [
@@ -389,9 +537,9 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 16),
                             SizedBox(
-                              height: 105,
+                              height: 120,
                               child: Stack(
                                 children: [
                                   ListView(
@@ -399,118 +547,121 @@ class _HomePageState extends State<HomePage> {
                                     scrollDirection: Axis.horizontal,
                                     physics: const BouncingScrollPhysics(),
                                     children: [
-                                  _buildMenuCard(
-                                    icon: Icons.note_alt,
-                                    title: 'Catatan Pribadi',
-                                    color: const Color(0xFF0078C1),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const PersonalNotesPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.emoji_events,
-                                    title: 'Perlombaan',
-                                    color: const Color(0xFFFFB300),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const CompetitionsPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.volunteer_activism,
-                                    title: 'Volunteer',
-                                    color: const Color(0xFF4CAF50),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const VolunteerActivitiesPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.corporate_fare,
-                                    title: 'Organisasi',
-                                    color: const Color(0xFF013880),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const OrganizationsPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.folder,
-                                    title: 'Dokumen',
-                                    color: const Color(0xFF9C27B0),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const DocumentsPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.work,
-                                    title: 'Projects',
-                                    color: const Color(0xFFFF6F00),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const ProjectsPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.schedule,
-                                    title: 'Jadwal Kuliah',
-                                    color: const Color(0xFF00897B),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const CourseSchedulesPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 12),
-                                  _buildMenuCard(
-                                    icon: Icons.calendar_month,
-                                    title: 'Kalender',
-                                    color: const Color(0xFFE91E63),
-                                    onTap: () {
-                                      Navigator.of(context).push(
-                                        MaterialPageRoute(
-                                          builder: (context) => const CalendarPage(),
-                                        ),
-                                      );
-                                    },
-                                  ),
+                                      _buildMenuItem(
+                                        icon: Icons.note_alt,
+                                        title: 'Catatan\nPribadi',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const PersonalNotesPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.emoji_events,
+                                        title: 'Perlombaan',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const CompetitionsPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.volunteer_activism,
+                                        title: 'Volunteer',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const VolunteerActivitiesPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.corporate_fare,
+                                        title: 'Organisasi',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const OrganizationsPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.folder,
+                                        title: 'Dokumen',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const DocumentsPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.work,
+                                        title: 'Projects',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const ProjectsPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.schedule,
+                                        title: 'Jadwal\nKuliah',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const CourseSchedulesPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                      _buildMenuItem(
+                                        icon: Icons.calendar_month,
+                                        title: 'Kalender',
+                                        color: AppColors.primary,
+                                        onTap: () {
+                                          Navigator.of(context).push(
+                                            MaterialPageRoute(
+                                              builder: (context) => const CalendarPage(),
+                                            ),
+                                          );
+                                        },
+                                      ),
                                     ],
                                   ),
-                                  // Tombol navigasi kiri transparan
+                                  // Tombol navigasi kiri
                                   Positioned(
                                     left: 0,
                                     top: 0,
                                     bottom: 0,
                                     child: Container(
-                                      width: 60,
+                                      width: 40,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Colors.white,
+                                            Colors.white.withOpacity(0.0),
+                                          ],
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                        ),
+                                      ),
                                       child: Center(
                                         child: Material(
                                           color: Colors.transparent,
@@ -518,18 +669,25 @@ class _HomePageState extends State<HomePage> {
                                             onTap: _scrollMenuLeft,
                                             borderRadius: BorderRadius.circular(20),
                                             child: Container(
-                                              padding: const EdgeInsets.all(8),
+                                              padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(
-                                                color: AppColors.primary.withOpacity(0.15),
+                                                color: Colors.white,
                                                 borderRadius: BorderRadius.circular(20),
                                                 border: Border.all(
                                                   color: AppColors.primary.withOpacity(0.3),
-                                                  width: 1,
+                                                  width: 1.5,
                                                 ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: AppColors.primary.withOpacity(0.15),
+                                                    blurRadius: 4,
+                                                    offset: const Offset(0, 2),
+                                                  ),
+                                                ],
                                               ),
                                               child: Icon(
-                                                Icons.arrow_back_ios_new,
-                                                size: 16,
+                                                Icons.chevron_left,
+                                                size: 20,
                                                 color: AppColors.primary,
                                               ),
                                             ),
@@ -538,13 +696,23 @@ class _HomePageState extends State<HomePage> {
                                       ),
                                     ),
                                   ),
-                                  // Tombol navigasi kanan transparan
+                                  // Tombol navigasi kanan
                                   Positioned(
                                     right: 0,
                                     top: 0,
                                     bottom: 0,
                                     child: Container(
-                                      width: 60,
+                                      width: 40,
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          colors: [
+                                            Colors.white.withOpacity(0.0),
+                                            Colors.white,
+                                          ],
+                                          begin: Alignment.centerLeft,
+                                          end: Alignment.centerRight,
+                                        ),
+                                      ),
                                       child: Center(
                                         child: Material(
                                           color: Colors.transparent,
@@ -552,18 +720,25 @@ class _HomePageState extends State<HomePage> {
                                             onTap: _scrollMenuRight,
                                             borderRadius: BorderRadius.circular(20),
                                             child: Container(
-                                              padding: const EdgeInsets.all(8),
+                                              padding: const EdgeInsets.all(6),
                                               decoration: BoxDecoration(
-                                                color: AppColors.primary.withOpacity(0.15),
+                                                color: Colors.white,
                                                 borderRadius: BorderRadius.circular(20),
                                                 border: Border.all(
                                                   color: AppColors.primary.withOpacity(0.3),
-                                                  width: 1,
+                                                  width: 1.5,
                                                 ),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: AppColors.primary.withOpacity(0.15),
+                                                    blurRadius: 4,
+                                                    offset: const Offset(0, 2),
+                                                  ),
+                                                ],
                                               ),
                                               child: Icon(
-                                                Icons.arrow_forward_ios,
-                                                size: 16,
+                                                Icons.chevron_right,
+                                                size: 20,
                                                 color: AppColors.primary,
                                               ),
                                             ),
@@ -579,8 +754,8 @@ class _HomePageState extends State<HomePage> {
                           ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
     );
   }
@@ -999,91 +1174,44 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Widget _buildMenuCard({
+  Widget _buildMenuItem({
     required IconData icon,
     required String title,
     required Color color,
     required VoidCallback onTap,
   }) {
-    return Container(
-      width: 78,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white,
-            Colors.grey.withOpacity(0.05),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.primary.withOpacity(0.15),
-          width: 1.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-            spreadRadius: 0,
-          ),
-        ],
-      ),
+    // Calculate width to show exactly 4 items on screen (screen width / 4)
+    return SizedBox(
+      width: MediaQuery.of(context).size.width / 4,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
-          borderRadius: BorderRadius.circular(16),
-          splashColor: AppColors.primary.withOpacity(0.1),
-          highlightColor: AppColors.primary.withOpacity(0.05),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(9),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [
-                        AppColors.primary.withOpacity(0.15),
-                        AppColors.primary.withOpacity(0.08),
-                      ],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.1),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 22,
-                    color: AppColors.primary,
-                  ),
+          borderRadius: BorderRadius.circular(12),
+          splashColor: color.withOpacity(0.1),
+          highlightColor: color.withOpacity(0.05),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 48,
+                color: color,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                  color: Colors.black87,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    height: 1.3,
-                    color: Colors.black87,
-                    letterSpacing: -0.2,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
           ),
         ),
       ),
