@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'pages/login_page.dart';
 import 'pages/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize locale untuk DateFormat Indonesia
+  await initializeDateFormatting('id_ID', null);
 
   await Supabase.initialize(
     url: 'https://dswirqyxefvscpdobknb.supabase.co',
