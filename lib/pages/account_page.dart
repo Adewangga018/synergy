@@ -310,7 +310,7 @@ class _AccountPageState extends State<AccountPage> {
                                   ),
                               ],
                             ),
-                            const SizedBox(height: 16),
+                            const SizedBox(height: 8),
                             Text(
                               _userProfile!.namaPanggilan,
                               textAlign: TextAlign.center,
@@ -321,12 +321,12 @@ class _AccountPageState extends State<AccountPage> {
                           ],
                         ),
                       ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 16),
 
                       // Profil Card
                       Card(
                         elevation: 2,
-                        color: AppColors.primary,
+                        color: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -339,10 +339,10 @@ class _AccountPageState extends State<AccountPage> {
                                 'Informasi Pribadi',
                                 style: Theme.of(context).textTheme.titleLarge?.copyWith(
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.white,
+                                      color: Colors.black87,
                                     ),
                               ),
-                              const Divider(height: 24, color: Colors.white),
+                              Divider(height: 24, color: Colors.grey.shade300),
                               _buildProfileItem(
                                 icon: Icons.person,
                                 label: 'Nama Lengkap',
@@ -395,29 +395,34 @@ class _AccountPageState extends State<AccountPage> {
                     ],
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Tombol Plus ditekan')),
-          );
-        },
-        backgroundColor: AppColors.primary,
-        elevation: 4,
-        child: const Icon(
-          Icons.add,
-          size: 32,
-          color: Colors.white,
+      floatingActionButton: SizedBox(
+        width: 70,
+        height: 70,
+        child: FloatingActionButton(
+          onPressed: () {
+            // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Tombol Plus ditekan')),
+            );
+          },
+          backgroundColor: AppColors.primary,
+          elevation: 6,
+          shape: const CircleBorder(),
+          child: const Icon(
+            Icons.add,
+            size: 38,
+            color: Colors.white,
+          ),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
         color: AppColors.primary,
         elevation: 8,
-        notchMargin: 8,
+        notchMargin: 5,
         shape: const CircularNotchedRectangle(),
         child: Container(
-          height: 60,
+          height: 65,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -512,7 +517,7 @@ class _AccountPageState extends State<AccountPage> {
   }) {
     return Row(
       children: [
-        Icon(icon, size: 24, color: Colors.white),
+        Icon(icon, size: 24, color: AppColors.primary),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -520,9 +525,9 @@ class _AccountPageState extends State<AccountPage> {
             children: [
               Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white70,
+                  color: AppColors.primary,
                 ),
               ),
               const SizedBox(height: 2),
@@ -531,7 +536,7 @@ class _AccountPageState extends State<AccountPage> {
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w500,
-                  color: Colors.white,
+                  color: Colors.black87,
                 ),
               ),
             ],

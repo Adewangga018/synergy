@@ -763,29 +763,34 @@ class _HomePageState extends State<HomePage> {
                     ],
                   ),
                 ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Tombol Plus ditekan')),
-          );
-        },
-        backgroundColor: AppColors.primary,
-        elevation: 4,
-        child: const Icon(
-          Icons.add,
-          size: 32,
-          color: Colors.white,
+      floatingActionButton: SizedBox(
+        width: 70,
+        height: 70,
+        child: FloatingActionButton(
+          onPressed: () {
+            // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Tombol Plus ditekan')),
+            );
+          },
+          backgroundColor: AppColors.primary,
+          elevation: 6,
+          shape: const CircleBorder(),
+          child: const Icon(
+            Icons.add,
+            size: 38,
+            color: Colors.white,
+          ),
         ),
       ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
         color: AppColors.primary,
         elevation: 8,
-        notchMargin: 8,
+        notchMargin: 5,
         shape: const CircularNotchedRectangle(),
         child: Container(
-          height: 60,
+          height: 65,
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
