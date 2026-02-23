@@ -20,6 +20,7 @@ import 'documents_page.dart';
 import 'projects_page.dart';
 import 'course_schedules_page.dart';
 import 'calendar_page.dart';
+import 'chat_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -334,15 +335,17 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _userProfile == null
-              ? const Center(child: Text('Gagal memuat profil'))
-              : SingleChildScrollView(
-                  child: Column(
-                    children: [
-                      // Motivational Hero Banner - Scrollable
-                      Container(
+      body: Stack(
+        children: [
+          _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _userProfile == null
+                  ? const Center(child: Text('Gagal memuat profil'))
+                  : SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          // Motivational Hero Banner - Scrollable
+                          Container(
                         width: double.infinity,
                         decoration: const BoxDecoration(
                           gradient: LinearGradient(
@@ -760,24 +763,27 @@ class _HomePageState extends State<HomePage> {
                           ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                        ],
+                      ),
+                    ),
+        ],
+      ),
       floatingActionButton: SizedBox(
         width: 70,
         height: 70,
         child: FloatingActionButton(
           onPressed: () {
-            // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Tombol Plus ditekan')),
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ChatPage()),
             );
           },
           backgroundColor: AppColors.primary,
           elevation: 6,
           shape: const CircleBorder(),
+          heroTag: 'chatFAB',
           child: const Icon(
-            Icons.add,
+            Icons.smart_toy,
             size: 38,
             color: Colors.white,
           ),

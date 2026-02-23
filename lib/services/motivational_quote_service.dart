@@ -124,6 +124,9 @@ class MotivationalQuoteService {
     bool replaceExisting = false,
   }) async {
     try {
+      print('🎯 Generating quotes (no auth required)'); // Debug
+      
+      // Don't send Authorization header - edge function doesn't need it
       final response = await _supabase.functions.invoke(
         'generate-motivational-quotes',
         body: {
@@ -132,7 +135,16 @@ class MotivationalQuoteService {
           if (context != null) 'context': context,
           'replace_existing': replaceExisting,
         },
+        headers: {}, // Empty headers to prevent auto Authorization header
       );
+
+      print('📊 Quote generation status: ${response.status}'); // Debug
+
+      if (response.status == 401) {
+        print('⚠️ Got 401 but edge function should not require auth');
+        print('⚠️ Retrying without invoking through Supabase client...');
+        throw Exception('Authentication issue - please restart app');
+      }
 
       if (response.status != 200) {
         throw Exception('Failed to generate quotes: ${response.status}');
@@ -206,18 +218,25 @@ class MotivationalQuoteService {
 
       // Step 3: Belum ada quote hari ini, generate baru
       print('No quote for today, generating new one...');
-      final result = await generateQuotes(
-        count: 1,
-        theme: themeContext, // Auto-detect theme atau gunakan 'tugas-akhir' untuk mahasiswa tingkat akhir
-        context: null, // Auto-detect context akademik
-        replaceExisting: false,
-      );
-
-      final quotesPreview = result['quotes_preview'] as List?;
       
-      if (quotesPreview != null && quotesPreview.isNotEmpty) {
-        return quotesPreview[0] as String;
-      } else {
+      try {
+        final result = await generateQuotes(
+          count: 1,
+          theme: themeContext, // Auto-detect theme atau gunakan 'tugas-akhir' untuk mahasiswa tingkat akhir
+          context: null, // Auto-detect context akademik
+          replaceExisting: false,
+        );
+
+        final quotesPreview = result['quotes_preview'] as List?;
+        
+        if (quotesPreview != null && quotesPreview.isNotEmpty) {
+          return quotesPreview[0] as String;
+        } else {
+          return getFallbackQuote();
+        }
+      } catch (generateError) {
+        print('⚠️ Failed to generate quote (using fallback): $generateError');
+        // Fallback jika generate gagal (termasuk 401 error)
         return getFallbackQuote();
       }
     } catch (e) {

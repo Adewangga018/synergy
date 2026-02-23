@@ -4,6 +4,7 @@ import 'package:synergy/services/auth_service.dart';
 import 'package:synergy/services/profile_photo_service.dart';
 import 'package:synergy/constants/app_colors.dart';
 import 'login_page.dart';
+import 'chat_page.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -329,6 +330,10 @@ class _AccountPageState extends State<AccountPage> {
                         color: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
+                          side: BorderSide(
+                            color: AppColors.primary,
+                            width: 1.5,
+                          ),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.all(20.0),
@@ -400,16 +405,17 @@ class _AccountPageState extends State<AccountPage> {
         height: 70,
         child: FloatingActionButton(
           onPressed: () {
-            // TODO: Tambahkan aksi untuk tombol plus (misal: tambah event/task baru)
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Tombol Plus ditekan')),
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const ChatPage()),
             );
           },
           backgroundColor: AppColors.primary,
           elevation: 6,
           shape: const CircleBorder(),
+          heroTag: 'chatFAB_account',
           child: const Icon(
-            Icons.add,
+            Icons.smart_toy,
             size: 38,
             color: Colors.white,
           ),

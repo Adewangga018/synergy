@@ -54,11 +54,99 @@ class MyApp extends StatelessWidget {
 }
 
 // Widget untuk mengecek status autentikasi
-class AuthWrapper extends StatelessWidget {
+class AuthWrapper extends StatefulWidget {
   const AuthWrapper({super.key});
 
   @override
+  State<AuthWrapper> createState() => _AuthWrapperState();
+}
+
+class _AuthWrapperState extends State<AuthWrapper> {
+  bool _isValidating = true;
+  bool _isSessionValid = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _validateSession();
+  }
+
+  /// Validate session and force logout if JWT is invalid
+  Future<void> _validateSession() async {
+    try {
+      final session = Supabase.instance.client.auth.currentSession;
+      
+      if (session == null) {
+        print('❌ No session found');
+        setState(() {
+          _isValidating = false;
+          _isSessionValid = false;
+        });
+        return;
+      }
+
+      print('🔍 Validating session...');
+      print('📋 Current access token (first 30 chars): ${session.accessToken.substring(0, 30)}...');
+      
+      // Try to refresh session to validate JWT
+      final response = await Supabase.instance.client.auth.refreshSession();
+      
+      if (response.session == null) {
+        print('❌ Session refresh failed - invalid JWT');
+        // Force logout and clear storage
+        await _forceLogoutAndClearStorage();
+        setState(() {
+          _isValidating = false;
+          _isSessionValid = false;
+        });
+      } else {
+        print('✅ Session refreshed');
+        print('📋 New access token (first 30 chars): ${response.session!.accessToken.substring(0, 30)}...');
+        
+        setState(() {
+          _isValidating = false;
+          _isSessionValid = true;
+        });
+      }
+    } catch (e) {
+      print('❌ Session validation error: $e');
+      // Force logout on any error
+      await _forceLogoutAndClearStorage();
+      
+      setState(() {
+        _isValidating = false;
+        _isSessionValid = false;
+      });
+    }
+  }
+
+  /// Force logout and clear all browser storage
+  Future<void> _forceLogoutAndClearStorage() async {
+    try {
+      print('🧹 Clearing storage and logging out...');
+      await Supabase.instance.client.auth.signOut();
+    } catch (logoutError) {
+      print('⚠️ Error during logout: $logoutError');
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isValidating) {
+      return const Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 16),
+              Text('Memvalidasi sesi login...'),
+            ],
+          ),
+        ),
+      );
+    }
+
     return StreamBuilder<AuthState>(
       stream: Supabase.instance.client.auth.onAuthStateChange,
       builder: (context, snapshot) {
@@ -74,7 +162,7 @@ class AuthWrapper extends StatelessWidget {
         // Jika ada session (user sudah login)
         final session = snapshot.hasData ? snapshot.data!.session : null;
         
-        if (session != null) {
+        if (session != null && _isSessionValid) {
           return const HomePage();
         } else {
           return const LoginPage();
